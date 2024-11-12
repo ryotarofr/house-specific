@@ -1,0 +1,11 @@
+[package]
+name = "bar-dec"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+image = "0.25.5"
+imageproc = "0.25.0"
+opencv = "0.93.3"
+plotters = "0.3.7"
+rustfft = "6.2.0"
