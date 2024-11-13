@@ -23,6 +23,7 @@ const HORIZONTAL_SECTIONS: u32 = 100;
 const SECTION_HEIGHT: u32 = 50;
 const THRESHOLD: f32 = 50.0;
 const CONSECUTIVE_THRESHOLD: usize = 5;
+const MAX_WHITE_BLACK_WIDTH: usize = 10;
 
 /// Detects barcode-like regions in a grayscale image using frequency analysis.
 ///
@@ -84,6 +85,12 @@ fn detect_barcode_regions(img_data: Vec<u8>, width: u32, height: u32) -> Vec<Bar
         );
     }
 
+    // Merges overlapping or adjacent barcode regions with the same vertical range
+    merge_barcode_regions(&mut barcode_regions);
+
+    // Adjust barcode regions
+    adjust_regions(&mut barcode_regions, width, height);
+
     barcode_regions
 }
 
@@ -117,6 +124,12 @@ fn compute_section_magnitudes(
             .map(|&pixel| if pixel > 128 { 1.0 } else { 0.0 })
             .collect();
 
+        // Check the width of the black and white area
+        if contains_large_white_black_regions(&binary_line, MAX_WHITE_BLACK_WIDTH) {
+            section_magnitudes.push(0.0);
+            continue;
+        }
+
         let mut input: Vec<Complex<f32>> =
             binary_line.iter().map(|&x| Complex::new(x, 0.0)).collect();
         let mut output = vec![Complex::new(0.0, 0.0); input.len()];
@@ -139,6 +152,53 @@ fn compute_section_magnitudes(
     }
 
     section_magnitudes
+}
+
+/// Checks if a binary line contains any white or black region
+/// with a width greater than the specified maximum width.
+///
+/// # Arguments
+///
+/// * `binary_line` - A slice of `f32` values representing a binary line,
+///   where 1.0 indicates a "white" pixel and 0.0 indicates a "black" pixel.
+/// * `max_width` - The maximum allowable width for a continuous white or black region.
+///
+/// # Returns
+///
+/// Returns `true` if any region of white or black exceeds the specified maximum width,
+/// otherwise returns `false`.
+///
+/// # Example
+///
+/// ```rust
+/// let binary_line = vec![1.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+/// let max_width = 2;
+/// let result = contains_large_white_black_regions(&binary_line, max_width);
+/// assert_eq!(result, true); // The black region exceeds the maximum width of 2.
+/// ```
+///
+/// # Notes
+///
+/// This function is useful for filtering binary lines where large
+/// continuous regions of the same color (white or black) are not desired.
+///
+fn contains_large_white_black_regions(binary_line: &[f32], max_width: usize) -> bool {
+    let mut count = 0;
+    let mut current_value = binary_line[0];
+
+    for &value in binary_line {
+        if value == current_value {
+            count += 1;
+        } else {
+            if count > max_width {
+                return true;
+            }
+            current_value = value;
+            count = 1;
+        }
+    }
+
+    count > max_width
 }
 
 /// Detects contiguous regions of high frequency magnitude that likely indicate barcodes.
@@ -180,6 +240,155 @@ fn detect_regions(
             consecutive_count = 0;
             start_index = None;
         }
+    }
+}
+
+/// Merges overlapping or adjacent barcode regions with the same vertical range.
+///
+/// This function takes a mutable vector of `BarcodeRegion` objects, groups regions
+/// with identical `y_start` and `y_end` values, and merges their horizontal ranges.
+/// The merged regions replace the original list.
+///
+/// # Arguments
+///
+/// * `barcode_regions` - A mutable reference to a vector of `BarcodeRegion` objects
+///   that will be merged if their vertical ranges (`y_start` and `y_end`) match.
+///
+/// # Example
+///
+/// ```rust
+/// let mut regions = vec![
+///     BarcodeRegion { x_start: 10, x_end: 20, y_start: 50, y_end: 60 },
+///     BarcodeRegion { x_start: 21, x_end: 30, y_start: 50, y_end: 60 },
+///     BarcodeRegion { x_start: 5, x_end: 15, y_start: 70, y_end: 80 },
+///     BarcodeRegion { x_start: 16, x_end: 25, y_start: 70, y_end: 80 },
+/// ];
+///
+/// merge_barcode_regions(&mut regions);
+///
+/// assert_eq!(regions, vec![
+///     BarcodeRegion { x_start: 10, x_end: 30, y_start: 50, y_end: 60 },
+///     BarcodeRegion { x_start: 5, x_end: 25, y_start: 70, y_end: 80 },
+/// ]);
+/// ```
+fn merge_barcode_regions(barcode_regions: &mut Vec<BarcodeRegion>) {
+    // Sort regions by their vertical range (y_start, y_end)
+    barcode_regions.sort_by(|a, b| (a.y_start, a.y_end).cmp(&(b.y_start, b.y_end)));
+
+    let mut merged_regions = Vec::new();
+    let mut current_group = Vec::new();
+
+    for region in barcode_regions.drain(..) {
+        if current_group.is_empty() {
+            current_group.push(region);
+        } else {
+            let first_region = &current_group[0];
+            if region.y_start == first_region.y_start && region.y_end == first_region.y_end {
+                current_group.push(region);
+            } else {
+                // Merge the current group and start a new one
+                merged_regions.push(merge_group(&current_group));
+                current_group.clear();
+                current_group.push(region);
+            }
+        }
+    }
+
+    // Merge the final group
+    if !current_group.is_empty() {
+        merged_regions.push(merge_group(&current_group));
+    }
+
+    // Replace the original vector with the merged results
+    *barcode_regions = merged_regions;
+}
+
+/// Merges a group of `BarcodeRegion` objects into a single region.
+///
+/// The function calculates the smallest `x_start` and the largest `x_end`
+/// within the group. It assumes all regions in the group have the same
+/// `y_start` and `y_end`.
+///
+/// # Arguments
+///
+/// * `group` - A slice of `BarcodeRegion` objects to be merged. All regions
+///   must have the same `y_start` and `y_end`.
+///
+/// # Returns
+///
+/// A new `BarcodeRegion` that spans the entire horizontal range of the group.
+///
+/// # Panics
+///
+/// This function will panic if the input slice is empty.
+///
+/// # Example
+///
+/// ```rust
+/// let group = vec![
+///     BarcodeRegion { x_start: 10, x_end: 20, y_start: 50, y_end: 60 },
+///     BarcodeRegion { x_start: 15, x_end: 25, y_start: 50, y_end: 60 },
+/// ];
+///
+/// let merged = merge_group(&group);
+///
+/// assert_eq!(merged, BarcodeRegion { x_start: 10, x_end: 25, y_start: 50, y_end: 60 });
+/// ```
+fn merge_group(group: &[BarcodeRegion]) -> BarcodeRegion {
+    let x_start = group.iter().map(|r| r.x_start).min().unwrap();
+    let x_end = group.iter().map(|r| r.x_end).max().unwrap();
+    let y_start = group[0].y_start; // All regions share the same y_start
+    let y_end = group[0].y_end; // All regions share the same y_end
+
+    BarcodeRegion {
+        x_start,
+        x_end,
+        y_start,
+        y_end,
+    }
+}
+
+/// Adjusts the dimensions of barcode regions by expanding or shrinking their coordinates.
+///
+/// This function modifies each region's coordinates to expand its size while ensuring
+/// the new coordinates do not exceed the image boundaries. Specifically:
+/// - `x_start` and `y_start` are reduced by 50 pixels if they are greater than or equal to 50.
+/// - `x_end` and `y_end` are increased by 50 pixels but are capped at the image's width and height, respectively.
+///
+/// # Arguments
+///
+/// * `barcode_regions` - A mutable reference to a vector of `BarcodeRegion` objects to adjust.
+/// * `width` - The width of the image. Used to cap `x_end`.
+/// * `height` - The height of the image. Used to cap `y_end`.
+///
+/// # Example
+///
+/// ```rust
+/// let mut regions = vec![
+///     BarcodeRegion { x_start: 100, x_end: 200, y_start: 100, y_end: 150 },
+///     BarcodeRegion { x_start: 30, x_end: 60, y_start: 40, y_end: 80 },
+/// ];
+///
+/// adjust_regions(&mut regions, 300, 200);
+///
+/// assert_eq!(regions, vec![
+///     BarcodeRegion { x_start: 50, x_end: 250, y_start: 50, y_end: 200 },
+///     BarcodeRegion { x_start: 30, x_end: 110, y_start: 40, y_end: 130 },
+/// ]);
+/// ```
+fn adjust_regions(barcode_regions: &mut Vec<BarcodeRegion>, width: u32, height: u32) {
+    for region in barcode_regions.iter_mut() {
+        if region.x_start >= 50 {
+            region.x_start -= 50;
+        }
+
+        region.x_end = (region.x_end + 50).min(width);
+
+        if region.y_start >= 50 {
+            region.y_start -= 50;
+        }
+
+        region.y_end = (region.y_end + 50).min(height);
     }
 }
 
