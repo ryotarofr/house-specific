@@ -20,7 +20,7 @@ struct BarcodeRegion {
 
 const VERTICAL_SECTIONS: u32 = 60;
 const HORIZONTAL_SECTIONS: u32 = 100;
-const SECTION_HEIGHT: u32 = 50;
+const SECTION_HEIGHT: u32 = 5;
 const THRESHOLD: f32 = 50.0;
 const CONSECUTIVE_THRESHOLD: usize = 5;
 const MAX_WHITE_BLACK_WIDTH: usize = 10;
@@ -85,10 +85,46 @@ fn detect_barcode_regions(img_data: Vec<u8>, width: u32, height: u32) -> Vec<Bar
         );
     }
 
-    // Merges overlapping or adjacent barcode regions with the same vertical range
+    // merge same pos "y"
     merge_barcode_regions(&mut barcode_regions);
 
-    // Adjust barcode regions
+    // merge current pos "y" and next pos "y"
+    merge_regions_if_y_matches(&mut barcode_regions);
+
+    barcode_regions
+}
+
+/// Detects character-like regions in a grayscale image by leveraging barcode detection logic.
+///
+/// # Arguments
+///
+/// * `img_data` - A vector of `u8` representing the grayscale image data.
+/// * `width` - The width of the image.
+/// * `height` - The height of the image.
+///
+/// # Returns
+///
+/// A vector of `BarcodeRegion` representing detected character regions.
+///
+/// # Example
+///
+/// ```
+/// use barcode_detector::{detect_character_regions, BarcodeRegion};
+///
+/// let img_data = vec![0; 800 * 600]; // Example grayscale image data
+/// let width = 800;
+/// let height = 600;
+///
+/// let regions = detect_character_regions(img_data, width, height);
+/// for region in regions {
+///     println!("{:?}", region);
+/// }
+/// ```
+fn detect_character_regions(img_data: Vec<u8>, width: u32, height: u32) -> Vec<BarcodeRegion> {
+    // Detect barcode-like regions using the barcode detection logic
+    let mut barcode_regions = detect_barcode_regions(img_data, width, height);
+
+    // Adjust the detected regions for better alignment and scaling
     adjust_regions(&mut barcode_regions, width, height);
 
     barcode_regions
@@ -303,6 +339,77 @@ fn merge_barcode_regions(barcode_regions: &mut Vec<BarcodeRegion>) {
     *barcode_regions = merged_regions;
 }
 
+/// Merges regions in a vector of `BarcodeRegion` if their `y_end` and `y_start` are consecutive.
+/// This function modifies the original vector by replacing it with the merged regions.
+///
+/// # Arguments
+///
+/// * `regions` - A mutable reference to a vector of `BarcodeRegion` to be processed.
+///
+/// # Details
+///
+/// The function sorts the regions based on their `y_start` and `y_end`, ensuring that
+/// regions with consecutive vertical positions (i.e., `y_end` of one region equals `y_start` of the next)
+/// are merged into a single region. The horizontal range (`x_start` and `x_end`) is adjusted to cover
+/// the full range of merged regions.
+///
+/// # Example
+///
+/// ```rust
+/// let mut regions = vec![
+///     BarcodeRegion { x_start: 10, x_end: 20, y_start: 0, y_end: 5 },
+///     BarcodeRegion { x_start: 15, x_end: 25, y_start: 5, y_end: 10 },
+///     BarcodeRegion { x_start: 30, x_end: 40, y_start: 20, y_end: 25 },
+/// ];
+///
+/// merge_regions_if_y_matches(&mut regions);
+///
+/// assert_eq!(regions, vec![
+///     BarcodeRegion { x_start: 10, x_end: 25, y_start: 0, y_end: 10 },
+///     BarcodeRegion { x_start: 30, x_end: 40, y_start: 20, y_end: 25 },
+/// ]);
+/// ```
+fn merge_regions_if_y_matches(regions: &mut Vec<BarcodeRegion>) {
+    // Sort regions by their vertical position (`y_start`, then `y_end`) for consistent merging.
+    regions.sort_by(|a, b| {
+        a.y_start
+            .cmp(&b.y_start)
+            .then_with(|| a.y_end.cmp(&b.y_end))
+    });
+
+    let mut merged_regions = Vec::new();
+    let mut current_group = Vec::new();
+
+    // Iterate through all regions and group them based on vertical continuity.
+    for region in regions.drain(..) {
+        if current_group.is_empty() {
+            // Start a new group with the current region.
+            current_group.push(region);
+        } else {
+            let last_region = current_group.last().unwrap();
+            if last_region.y_end == region.y_start {
+                // If the current region's `y_start` matches the last region's `y_end`,
+                // add it to the current group for merging.
+                current_group.push(region);
+            } else {
+                // If the regions are not vertically continuous, merge the current group
+                // and start a new group with the current region.
+                merged_regions.push(merge_group(&current_group));
+                current_group.clear();
+                current_group.push(region);
+            }
+        }
+    }
+
+    // Merge the final group if there are any remaining regions.
+    if !current_group.is_empty() {
+        merged_regions.push(merge_group(&current_group));
+    }
+
+    // Replace the original regions with the merged results.
+    *regions = merged_regions;
+}
+
 /// Merges a group of `BarcodeRegion` objects into a single region.
 ///
 /// The function calculates the smallest `x_start` and the largest `x_end`
@@ -335,10 +442,14 @@ fn merge_barcode_regions(barcode_regions: &mut Vec<BarcodeRegion>) {
 /// assert_eq!(merged, BarcodeRegion { x_start: 10, x_end: 25, y_start: 50, y_end: 60 });
 /// ```
 fn merge_group(group: &[BarcodeRegion]) -> BarcodeRegion {
+    if group.is_empty() {
+        panic!("merge_group: Group is empty and cannot be merged.");
+    }
+
     let x_start = group.iter().map(|r| r.x_start).min().unwrap();
     let x_end = group.iter().map(|r| r.x_end).max().unwrap();
-    let y_start = group[0].y_start; // All regions share the same y_start
-    let y_end = group[0].y_end; // All regions share the same y_end
+    let y_start = group.first().unwrap().y_start;
+    let y_end = group.last().unwrap().y_end;
 
     BarcodeRegion {
         x_start,
@@ -347,7 +458,6 @@ fn merge_group(group: &[BarcodeRegion]) -> BarcodeRegion {
         y_end,
     }
 }
-
 /// Adjusts the dimensions of barcode regions by expanding or shrinking their coordinates.
 ///
 /// This function modifies each region's coordinates to expand its size while ensuring
@@ -378,16 +488,7 @@ fn merge_group(group: &[BarcodeRegion]) -> BarcodeRegion {
 /// ```
 fn adjust_regions(barcode_regions: &mut Vec<BarcodeRegion>, width: u32, height: u32) {
     for region in barcode_regions.iter_mut() {
-        if region.x_start >= 50 {
-            region.x_start -= 50;
-        }
-
-        region.x_end = (region.x_end + 50).min(width);
-
-        if region.y_start >= 50 {
-            region.y_start -= 50;
-        }
-
+        region.y_start += 50;
         region.y_end = (region.y_end + 50).min(height);
     }
 }
