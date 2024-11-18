@@ -120,6 +120,7 @@ fn detect_barcode_regions(img_data: Vec<u8>, width: u32, height: u32) -> Vec<Bar
 ///     println!("{:?}", region);
 /// }
 /// ```
+#[pyfunction]
 fn detect_character_regions(img_data: Vec<u8>, width: u32, height: u32) -> Vec<BarcodeRegion> {
     // Detect barcode-like regions using the barcode detection logic
     let mut barcode_regions = detect_barcode_regions(img_data, width, height);
@@ -475,20 +476,21 @@ fn merge_group(group: &[BarcodeRegion]) -> BarcodeRegion {
 ///
 /// ```rust
 /// let mut regions = vec![
-///     BarcodeRegion { x_start: 100, x_end: 200, y_start: 100, y_end: 150 },
-///     BarcodeRegion { x_start: 30, x_end: 60, y_start: 40, y_end: 80 },
+///     BarcodeRegion { x_start: 100, x_end: 200, y_start: 100, y_end: 150 }
 /// ];
 ///
 /// adjust_regions(&mut regions, 300, 200);
 ///
 /// assert_eq!(regions, vec![
-///     BarcodeRegion { x_start: 50, x_end: 250, y_start: 50, y_end: 200 },
-///     BarcodeRegion { x_start: 30, x_end: 110, y_start: 40, y_end: 130 },
+///     BarcodeRegion { x_start: 125, x_end: 175, y_start: 154, y_end: 200 }
 /// ]);
 /// ```
 fn adjust_regions(barcode_regions: &mut Vec<BarcodeRegion>, width: u32, height: u32) {
+    // TODO: Optimize the process of removing * from both ends of the barcode
     for region in barcode_regions.iter_mut() {
-        region.y_start += 50;
+        region.x_start += 25;
+        region.x_end -= 25;
+        region.y_start = region.y_end + 4;
         region.y_end = (region.y_end + 50).min(height);
     }
 }
@@ -496,6 +498,6 @@ fn adjust_regions(barcode_regions: &mut Vec<BarcodeRegion>, width: u32, height: 
 /// A Python module implemented in Rust.
 #[pymodule]
 fn house_specific(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(detect_barcode_regions, m)?)?;
+    m.add_function(wrap_pyfunction!(detect_character_regions, m)?)?;
     Ok(())
 }
