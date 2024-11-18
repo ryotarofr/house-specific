@@ -9,9 +9,8 @@ name = "bar_dec"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = "0.22.0"
+pyo3 = "0.23.1"
 image = "0.25.5"
 imageproc = "0.25.0"
-# opencv = "0.93.3"
 plotters = "0.3.7"
 rustfft = "6.2.0"
