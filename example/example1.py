@@ -4,7 +4,7 @@ from PIL import Image
 image_path = "/path/to/img.webp"
 img = Image.open(image_path).convert("L")
 
-# 画像データをバイト配列に変換
+# Converts image data to byte array
 img_data = list(img.getdata())
 width, height = img.size
 
