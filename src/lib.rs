@@ -485,7 +485,7 @@ fn merge_group(group: &[BarcodeRegion]) -> BarcodeRegion {
 ///     BarcodeRegion { x_start: 125, x_end: 175, y_start: 154, y_end: 200 }
 /// ]);
 /// ```
-fn adjust_regions(barcode_regions: &mut Vec<BarcodeRegion>, width: u32, height: u32) {
+fn adjust_regions(barcode_regions: &mut [BarcodeRegion], _width: u32, height: u32) {
     // TODO: Optimize the process of removing * from both ends of the barcode
     for region in barcode_regions.iter_mut() {
         region.x_start += 25;
