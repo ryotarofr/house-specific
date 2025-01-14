@@ -1,6 +1,7 @@
 # house-specific
 
-Package for locating the coordinates of a barcode in an image
+Package for locating the coordinates of a barcode in an image.
+\\ Sample for verification and never very practical. \\
 
 ## Why create it?
 
