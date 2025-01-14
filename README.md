@@ -35,9 +35,17 @@ source ~/.bashrc
 ```
 
 ```bash
-rustc --version
-# rustc 1.82.0 (f6e511eec 2024-10-15)
+sudo apt install cargo
+cargo --version
+# cargo 1.75.0
 ```
+
+```bash
+sudo apt install rustup
+rustup --version
+# rustup 1.26.0 (2024-04-01)
+```
+
 
 ```bash
 sudo apt install cargo
@@ -58,6 +66,10 @@ rustup --version
 sudo apt install python3-pip
 pip3 --version
 # pip 24.0 from /usr/lib/python3/dist-packages/pip (python 3.12)
+```
+
+```bash
+sudo apt install -y libfontconfig1-dev
 ```
 
 #### Virtual environment (required at build time)
@@ -107,6 +119,14 @@ build command
 
 ```bash
 maturin develop
+```
+
+## generate `.whl`(Recommended for local development)
+
+Wheel needs to be generated to make the format executable only in python environment when deploying Docker image.
+
+```bash
+maturin build --release --strip --manylinux off
 ```
 
 ## Overview
@@ -165,3 +185,19 @@ processing time: 0.5448 s
 ```
 
 The coordinates of two bar codes (setting decision and identifier) are acquired.
+
+## TODO
+
+- Better recognition accuracy
+
+`adjust_regions`には絶対値のオフセットを追加している(これは画像サイズの誤差が少ないことを前提としている)が、ここを画像の大きさから相対値算出するようにする
+
+- Packaging
+
+そもそもlambdaのバージョンとpythonのバージョンを合わせないと実行時にインポートエラーになった。(今回はv3.12)
+
+-> 途中からローカルのpythonを3.12で統一するのは依存関係の問題もあって面倒だった。
+
+そのため、Rustの実行ファイルをpythonのみで実行できる + Dockerイメージでlambdaにデプロイできる形式に変更する必要があった。
+
+-> しかしながら根本的な原因の解決にはなっていない(ほかユーザがローカル環境で追加の実装ができない)
