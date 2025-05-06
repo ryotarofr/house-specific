@@ -37,7 +37,7 @@ const MAX_WHITE_BLACK_WIDTH: usize = 10;
 ///
 /// # Example
 ///
-/// ```
+/// ```rust
 /// use barcode_detector::{detect_barcode_regions, BarcodeRegion};
 /// use image::GrayImage;
 ///
@@ -108,9 +108,7 @@ fn detect_barcode_regions(img_data: Vec<u8>, width: u32, height: u32) -> Vec<Bar
 ///
 /// # Example
 ///
-/// ```
-/// use barcode_detector::{detect_character_regions, BarcodeRegion};
-///
+/// ```rust
 /// let img_data = vec![0; 800 * 600]; // Example grayscale image data
 /// let width = 800;
 /// let height = 600;
